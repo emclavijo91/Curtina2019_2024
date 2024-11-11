@@ -1,0 +1,850 @@
+---
+title: "Análisis de las EN 2019 Y 2024 en Curtina, Tacuarembó"
+author: "Emiliano Clavijo (Universidad de la República, Uruguay)"
+date: "2024-11-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+#por si necesitamos paquetes, los instalamos
+
+if (!require(readr)) install.packages("readr")
+if (!require(readxl)) install.packages("readxl")
+if (!require(data.table)) install.packages("data.table")
+if (!require(dplyr)) install.packages("dplyr")
+if (!require(ggplot2)) install.packages("ggplot2")
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Por si quisieramos auxiliarnos para conocer un poco más las implicancias de las series electorales, descargamos el Plan Circuital de marzo de 2024.
+
+
+```{r}
+
+# Definir las rutas de los archivos, por si necesitamos orientación de jurisdicciones
+#ruta_plan_circuital <- "https://catalogodatos.gub.uy/dataset/7aaa1ff0-8ea5-4302-a3e6-c2d589b484a3/resource/cd75fe38-2668-4487-992f-e39ea25ee1b6/download/plan-circuital.csv"
+
+
+```
+
+
+Aquí un panorama de habilitados, votos emitidos, observados, etc. de 2024
+
+
+```{r}
+
+url2024 <- "https://www.gub.uy/corte-electoral/sites/corte-electoral/files/2024-11/depto_circ_hojavot_nac_24_departamental.xlsx"
+destfile2024 <- "depto_circ_hojavot_nac_24_departamental.xlsx"
+download.file(url2024, destfile2024, mode = "wb")
+
+# Luego, lee el archivo
+depto_circ_2024 <- readxl::read_excel(destfile2024, skip = 7)
+
+library(readr)
+
+# Usar la URL directamente para leer el archivo
+total2024 <- "https://catalogodatos.gub.uy/dataset/7aaa1ff0-8ea5-4302-a3e6-c2d589b484a3/resource/0f149bb6-4fff-463b-bc3a-8ab671bcdf34/download/totales-generales-por-comision-receptora-de-votos-y-plebiscitos-constitucionales.csv"
+
+# Leer el archivo CSV desde la URL
+vot2024 <- read_csv(total2024)
+
+# Ver las primeras filas del data frame
+head(vot2024)
+```
+Aquí un panorama de habilitados, votos emitidos, observados, etc. de 2019
+
+```{r}
+
+# Usar la URL directamente para descargar el archivo
+total2019_url <- "https://catalogodatos.gub.uy/dataset/7c3caf30-b59e-43de-b928-547030cc682b/resource/a48be614-8e13-4aba-8516-740bfe89cdf6/download/totales-generales-por-comision-receptora-de-votos.xlsx"
+
+# Descargar el archivo temporalmente
+temp_file <- tempfile(fileext = ".xlsx")
+download.file(total2019_url, temp_file, mode = "wb")
+
+# Leer el archivo Excel desde el archivo temporal
+vot2019 <- read_excel(temp_file)
+
+# Ver las primeras filas del DataFrame
+head(vot2019)
+```
+Aqu{i cargamos la base de votos emitidos (lemas) durante las EN 2019.
+
+
+```{r}
+url2019 <- "https://eleccionesnacionales.corteelectoral.gub.uy/json/Exportaciones/Inf_D_Hoja.xlsx"
+destfile2019 <- "Inf_D_Hoja_2019.xlsx"
+download.file(url2019, destfile2019, mode = "wb")
+
+depto_circ_2019 <- readxl::read_excel(destfile2019, skip = 8)
+```
+## Trabajo con geocodificación aplicada a resultados electorales
+
+Se procede a cargar la base de series con la asistencia de la librería "sf". Trabajamos con shapefile, porque la descarga de .csv presenta complejidades en el trazado del mapa. Los archivos pueden descargarse a partir del acceso al visualizador catrográfico de IDE que contiene capas diseñadas en acuerdo con la Corte Electoral: https://www.gub.uy/corte-electoral/datos-y-estadisticas/datos/visualizador-cartografia-digital
+
+```{r}
+library(sf)
+shapefile_path <- "C:/Users/USIEn/Downloads/series_electorales_20240523/series_electorales_20240523.shp"
+uruguay_shp <- st_read(shapefile_path)
+# Verificar y corregir la codificación si es necesario
+uruguay_shp$depto <- iconv(uruguay_shp$depto, from = "latin1", to = "UTF-8")
+```
+
+En este segmento unimos los datos geográficos con los electorales para las EN 2019 y 2024, le cambiamos la denominación a la columna serie.
+
+```{r}
+
+# Unir depto_circ_2024 con uruguay_shp
+depto_circ_2024 <- uruguay_shp %>%
+  left_join(depto_circ_2024, by = c("serie" = "SERIES"))
+
+# Unir depto_circ_2019 con uruguay_shp
+depto_circ_2019 <- uruguay_shp %>%
+  left_join(depto_circ_2019, by = c("serie" = "SERIES"))
+
+```
+
+Aquí trazamos el mapa de Tacuarembó.
+
+```{r}
+# Filtrar solo las geometrías correspondientes a tbo
+tbo_shp <- uruguay_shp[uruguay_shp$depto == "TACUAREMBÓ", ]
+
+```
+
+Aquí identificamos la serie correspondiente a Curtina (Serie TDC)
+
+
+```{r}
+# Filtrar solo las geometrías correspondientes a curtina
+curtina_shp <- uruguay_shp[uruguay_shp$serie == "TDC", ]
+
+
+```
+
+Trazamos el mapa para corroborar que haya quedado correctamente incrustado.
+
+```{r}
+ggplot(tbo_shp)+
+  geom_sf()
+
+library(ggplot2)
+library(sf)
+
+```
+
+Pintamos Curtina de amarillo.
+
+```{r}
+# A partir de los shapefiles ya están cargados como tbo_shp y curtina_shp, vamos a identificar la jurisdicción con amarillo
+
+ggplot() +
+  geom_sf(data = tbo_shp) +                # Capa base con tbo_shp
+  geom_sf(data = curtina_shp, fill = "yellow", color = "black") +  # Agrega curtina_shp en amarillo
+  theme_minimal()                          # Tema minimalista
+```
+
+
+Comenzamos a sumar votos según lema, para ver frec absolutas y relativas en las respectivas instancias. Aquí EN2019.
+
+
+```{r}
+
+# Sumar votos por LEMA, eliminar la columna 'geometry', y ordenar
+votos_LEMAS_TDC_2019 <- depto_circ_2019 %>%
+  filter(serie == "TDC") %>%  # Filtrar la serie TDC sin filtrar por LEMA, ya que ahora lo agruparemos
+  group_by(LEMA) %>%  # Agrupar por LEMA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por LEMA
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos por LEMA
+Fabs_total <- sum(votos_LEMAS_TDC_2019$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_LEMAS_TDC_2019 <- votos_LEMAS_TDC_2019 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  LEMA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna LEMA sea de tipo carácter en ambos dataframes
+votos_LEMAS_TDC_2019$LEMA <- as.character(votos_LEMAS_TDC_2019$LEMA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna LEMA
+votos_LEMAS_TDC_2019 <- votos_LEMAS_TDC_2019 %>%
+  filter(LEMA != "Totales")
+
+# Agregar la fila de totales
+votos_LEMAS_TDC_2019 <- bind_rows(votos_LEMAS_TDC_2019, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_LEMAS_TDC_2019, caption = "Tabla 1. Votos por LEMA en la serie TDC, 2019") %>%
+  kable_styling() %>%
+  footnote(general = "Fuente: Corte Electoral, 2019", general_title = "")
+```
+
+
+Ahora, los votos al lema en Curtina en las EN 2024.
+
+```{r}
+
+# Sumar votos por LEMA, eliminar la columna 'geometry', y ordenar
+votos_LEMAS_TDC_2024 <- depto_circ_2024 %>%
+  filter(serie == "TDC") %>%  # Filtrar la serie TDC sin filtrar por LEMA, ya que ahora lo agruparemos
+  group_by(LEMA) %>%  # Agrupar por LEMA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por LEMA
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos por LEMA
+Fabs_total <- sum(votos_LEMAS_TDC_2024$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_LEMAS_TDC_2024 <- votos_LEMAS_TDC_2024 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  LEMA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna LEMA sea de tipo carácter en ambos dataframes
+votos_LEMAS_TDC_2024$LEMA <- as.character(votos_LEMAS_TDC_2024$LEMA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna LEMA
+votos_LEMAS_TDC_2024 <- votos_LEMAS_TDC_2024 %>%
+  filter(LEMA != "Totales")
+
+# Agregar la fila de totales
+votos_LEMAS_TDC_2024 <- bind_rows(votos_LEMAS_TDC_2024, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_LEMAS_TDC_2024, caption = "Tabla 2. Votos por LEMA en la serie TDC, 2024") %>%
+  kable_styling() %>%
+  footnote(general = "Fuente: Corte Electoral, 2024", general_title = "")
+```
+
+
+Vamos a crear una nueva tabla que unirá los votos a lemas en los años 2019 y 2024 para calcular la diferencia de puntos porcentuales en un mismo lema entre instancias electorales.
+
+
+```{r}
+
+# Sumar votos por LEMA para 2019 y 2024 (ya tienes este código)
+
+# Unir las tablas de 2019 y 2024 por LEMA
+tabla_completa <- votos_LEMAS_TDC_2024 %>%
+  select(LEMA, Frel_2024 = Frel) %>%  # Seleccionamos solo la columna de porcentaje de 2024
+  left_join(votos_LEMAS_TDC_2019 %>%
+              select(LEMA, Frel_2019 = Frel), by = "LEMA")  # Unimos con la tabla de 2019
+
+# Calcular la diferencia en puntos porcentuales
+tabla_completa <- tabla_completa %>%
+  mutate(Diferencia_pp = Frel_2024 - Frel_2019)  # Restar los porcentajes
+
+# Agregar la fila de Totales
+totales_diferencia <- data.frame(
+  LEMA = "Totales",  # Nombre de la fila total
+  Frel_2024 = 100,  # El porcentaje para Totales es 100%
+  Frel_2019 = 100,  # El porcentaje para Totales es 100%
+  Diferencia_pp = NA  # La diferencia es 0 para la fila Totales
+)
+
+## Reorganizar las columnas y redondear los valores a dos decimales
+tabla_completa <- tabla_completa %>%
+  select(LEMA, Frel_2019, Frel_2024, Diferencia_pp) %>%  # Reorganizar el orden de las columnas
+  mutate(across(c(Frel_2019, Frel_2024, Diferencia_pp), ~ round(.x, 2)))  # Redondear a dos decimales
+
+# Crear y formatear la tabla con los valores redondeados y el pie de página
+kable(tabla_completa, caption = "Tabla 3. Diferencia en puntos porcentuales de votos por LEMA entre 2019 y 2024") %>%
+  kable_styling() %>%
+  footnote(general = "", general_title = "Fuente: Corte Electoral, 2019, 2024")
+
+
+```
+
+Ahora, vamos a inspeccionar cómo votaron las hojas del PN en EN 2019.
+
+```{r}
+ 
+# Sumar votos por hoja, eliminar la columna 'geometry', y ordenar
+votos_PN_TDC_2019 <- depto_circ_2019 %>%
+  filter(serie == "TDC", LEMA == "Partido Nacional") %>%
+  group_by(HOJA) %>%  # Agrupar por HOJA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por hoja
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos al PN en la serie TDC
+Fabs_total <- sum(votos_PN_TDC_2019$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_PN_TDC_2019 <- votos_PN_TDC_2019 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna HOJA sea de tipo carácter en ambos dataframes
+votos_PN_TDC_2019$HOJA <- as.character(votos_PN_TDC_2019$HOJA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna HOJA
+votos_PN_TDC_2019 <- votos_PN_TDC_2019 %>%
+  filter(HOJA != "Totales")
+
+# Agregar la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Combinar la fila de totales con el dataframe original
+votos_PN_TDC_2019 <- bind_rows(votos_PN_TDC_2019, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_PN_TDC_2019, caption = "Tabla 4. Votos por HOJA del Partido Nacional en la serie TDC, 2019") %>%
+  kable_styling() %>%
+ footnote(general = "", general_title = "Fuente: Corte Electoral, 2019")
+
+
+```
+
+
+lUEGO, amos a inspeccionar cómo votaron las hojas del PN en EN 2024.
+
+
+```{r}
+## Sumar votos por hoja, eliminar la columna 'geometry', y ordenar
+votos_PN_TDC_2024 <- depto_circ_2024 %>%
+  filter(serie == "TDC", LEMA == "Partido Nacional") %>%
+  group_by(HOJA) %>%  # Agrupar por HOJA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por hoja
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos al PN en la serie TDC
+Fabs_total <- sum(votos_PN_TDC_2024$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_PN_TDC_2024 <- votos_PN_TDC_2024 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna HOJA sea de tipo carácter en ambos dataframes
+votos_PN_TDC_2024$HOJA <- as.character(votos_PN_TDC_2024$HOJA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna HOJA
+votos_PN_TDC_2024 <- votos_PN_TDC_2024 %>%
+  filter(HOJA != "Totales")
+
+# Agregar la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Combinar la fila de totales con el dataframe original
+votos_PN_TDC_2024 <- bind_rows(votos_PN_TDC_2024, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_PN_TDC_2024, caption = "Tabla 5. Votos por HOJA del Partido Nacional en la serie TDC, 2024") %>%
+  kable_styling() %>%
+ footnote(general = "", general_title = "Fuente: Corte Electoral, 2024")
+
+```
+
+Mismo ejercicio con el Partido Colorado, en las EN 2019.
+
+
+```{r}
+# Sumar votos por hoja, eliminar la columna 'geometry', y ordenar
+votos_PC_TDC_2019 <- depto_circ_2019 %>%
+  filter(serie == "TDC", LEMA == "Partido Colorado") %>%
+  group_by(HOJA) %>%  # Agrupar por HOJA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por hoja
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos al PC en la serie TDC
+Fabs_total <- sum(votos_PC_TDC_2019$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_PC_TDC_2019 <- votos_PC_TDC_2019 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna HOJA sea de tipo carácter en ambos dataframes
+votos_PC_TDC_2019$HOJA <- as.character(votos_PC_TDC_2019$HOJA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna HOJA
+votos_PC_TDC_2019 <- votos_PC_TDC_2019 %>%
+  filter(HOJA != "Totales")
+
+# Agregar la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Combinar la fila de totales con el dataframe original
+votos_PC_TDC_2019 <- bind_rows(votos_PC_TDC_2019, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_PC_TDC_2019, caption = "Tabla 6. Votos por HOJA del Partido Colorado en la serie TDC, 2019") %>%
+  kable_styling() %>%
+ footnote(general = "", general_title = "Fuente: Corte Electoral, 2019")
+```
+
+Ahora, veamos como lo hizo el PC en el 2024.
+
+
+```{r}
+# Sumar votos por hoja, eliminar la columna 'geometry', y ordenar
+votos_PC_TDC_2024 <- depto_circ_2024 %>%
+  filter(serie == "TDC", LEMA == "Partido Colorado") %>%
+  group_by(HOJA) %>%  # Agrupar por HOJA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por hoja
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos al PC en la serie TDC
+Fabs_total <- sum(votos_PC_TDC_2024$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_PC_TDC_2024 <- votos_PC_TDC_2024 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna HOJA sea de tipo carácter en ambos dataframes
+votos_PC_TDC_2024$HOJA <- as.character(votos_PC_TDC_2024$HOJA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna HOJA
+votos_PC_TDC_2024 <- votos_PC_TDC_2024 %>%
+  filter(HOJA != "Totales")
+
+# Agregar la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Combinar la fila de totales con el dataframe original
+votos_PC_TDC_2024 <- bind_rows(votos_PC_TDC_2024, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_PC_TDC_2024, caption = "Tabla 7. Votos por HOJA del Partido Colorado en la serie TDC, 2024") %>%
+  kable_styling() %>%
+ footnote(general = "", general_title = "Fuente: Corte Electoral, 2024")
+```
+
+Sigamos con el FA, EN 2019, ¿cómo votaron sus Hojas en Curtina?
+
+
+```{r}
+# Sumar votos por hoja, eliminar la columna 'geometry', y ordenar
+votos_FA_TDC_2019 <- depto_circ_2019 %>%
+  filter(serie == "TDC", LEMA == "Partido Frente Amplio") %>%
+  group_by(HOJA) %>%  # Agrupar por HOJA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por hoja
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos al FA en la serie TDC
+Fabs_total <- sum(votos_FA_TDC_2019$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_FA_TDC_2019 <- votos_FA_TDC_2019 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna HOJA sea de tipo carácter en ambos dataframes
+votos_FA_TDC_2019$HOJA <- as.character(votos_FA_TDC_2019$HOJA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna HOJA
+votos_FA_TDC_2019 <- votos_FA_TDC_2019 %>%
+  filter(HOJA != "Totales")
+
+# Agregar la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Combinar la fila de totales con el dataframe original
+votos_FA_TDC_2019 <- bind_rows(votos_FA_TDC_2019, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_FA_TDC_2019, caption = "Tabla 8. Votos por HOJA del Partido Frente Amplio en la serie TDC, 2019") %>%
+  kable_styling() %>%
+   footnote(general = "", general_title = "Fuente: Corte Electoral, 2019")
+```
+
+
+¿Y cómo votó en 2024?
+
+```{r}
+# Sumar votos por hoja, eliminar la columna 'geometry', y ordenar
+votos_FA_TDC_2024 <- depto_circ_2024 %>%
+  filter(serie == "TDC", LEMA == "Partido Frente Amplio") %>%
+  group_by(HOJA) %>%  # Agrupar por HOJA
+  summarise(Fabs = sum(CNT_VOTOS, na.rm = TRUE)) %>%  # Sumar los votos por hoja
+  arrange(desc(Fabs)) %>%  # Ordenar de manera descendente por total de votos
+  ungroup() %>%  # Eliminar el agrupamiento para el cálculo del porcentaje
+  st_drop_geometry()  # Eliminar la columna geometry
+
+# Calcular el total de votos al FA en la serie TDC
+Fabs_total <- sum(votos_FA_TDC_2024$Fabs, na.rm = TRUE)
+
+# Agregar la columna de porcentaje
+votos_FA_TDC_2024 <- votos_FA_TDC_2024 %>%
+  mutate(Frel = (Fabs / Fabs_total) * 100)  # Calcular el porcentaje
+
+# Crear la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Asegurarse de que la columna HOJA sea de tipo carácter en ambos dataframes
+votos_FA_TDC_2024$HOJA <- as.character(votos_FA_TDC_2024$HOJA)
+
+# Eliminar cualquier fila existente que tenga el valor "Totales" en la columna HOJA
+votos_FA_TDC_2024 <- votos_FA_TDC_2024 %>%
+  filter(HOJA != "Totales")
+
+# Agregar la fila de totales
+totales <- data.frame(
+  HOJA = "Totales",  # Nombre de la fila total
+  Fabs = Fabs_total,  # Total de votos
+  Frel = 100  # El porcentaje para la fila de totales es 100%
+)
+
+# Combinar la fila de totales con el dataframe original
+votos_FA_TDC_2024 <- bind_rows(votos_FA_TDC_2024, totales)
+
+# Cargar el paquete kableExtra para el pie de la tabla
+library(kableExtra)
+
+# Crear y formatear la tabla con la fila de totales
+kable(votos_FA_TDC_2024, caption = "Tabla 9. Votos por HOJA del Partido Frente Amplio en la serie TDC, 2024") %>%
+  kable_styling() %>%
+  footnote(general = "", general_title = "Fuente: Corte Electoral, 2024")
+```
+
+Ahora, veamos como votaron en forma comparada las hojas del PN en Curtina en 2019 y 2024.
+
+
+```{r}
+# Convert to data frame if they are sf objects
+depto_circ_2019 <- depto_circ_2019 %>% st_drop_geometry()
+depto_circ_2024 <- depto_circ_2024 %>% st_drop_geometry()
+
+# Proceed with the rest of your code
+votos_2019 <- depto_circ_2019 %>%
+  filter(serie == "TDC", LEMA == "Partido Nacional") %>%
+  group_by(HOJA) %>%
+  summarise(Fabs_2019 = sum(CNT_VOTOS, na.rm = TRUE)) %>%
+  ungroup()
+
+votos_2024 <- depto_circ_2024 %>%
+  filter(serie == "TDC", LEMA == "Partido Nacional") %>%
+  group_by(HOJA) %>%
+  summarise(Fabs_2024 = sum(CNT_VOTOS, na.rm = TRUE)) %>%
+  ungroup()
+
+# Calcular el total de votos por año para Partido Nacional
+Fabs_total_2019 <- votos_2019 %>% 
+  summarise(Fabs_total_2019 = sum(Fabs_2019, na.rm = TRUE))
+
+Fabs_total_2024 <- votos_2024 %>% 
+  summarise(Fabs_total_2024 = sum(Fabs_2024, na.rm = TRUE))
+
+# Calcular la frecuencia relativa por hoja
+votos_2019 <- votos_2019 %>%
+  left_join(Fabs_total_2019, by = character()) %>%
+  mutate(Frel_2019 = (Fabs_2019 / Fabs_total_2019) * 100)
+
+votos_2024 <- votos_2024 %>%
+  left_join(Fabs_total_2024, by = character()) %>%
+  mutate(Frel_2024 = (Fabs_2024 / Fabs_total_2024) * 100)
+
+# Unir los datos de 2019 y 2024, asegurando que se mantengan todas las hojas de 2024
+tabla_completa <- votos_2024 %>%
+  select(HOJA, Frel_2024) %>%
+  left_join(votos_2019 %>% select(HOJA, Frel_2019), by = "HOJA")
+
+# Calcular la diferencia en puntos porcentuales
+tabla_completa <- tabla_completa %>%
+  mutate(Diferencia_PN = Frel_2024 - Frel_2019)
+
+# Agregar la fila de totales con base 100
+totales_PN <- tabla_completa %>%
+  summarise(
+    HOJA = "Totales",
+    Frel_2019 = 100,
+    Frel_2024 = 100,
+    Diferencia_PN = NA
+  )
+
+# Convertir la columna 'HOJA' a character para ambas tablas antes de unir
+tabla_completa <- tabla_completa %>%
+  mutate(HOJA = as.character(HOJA))
+
+totales_PN <- totales_PN %>%
+  mutate(HOJA = as.character(HOJA))
+
+# Unir las tablas
+tabla_PN <- bind_rows(tabla_completa, totales_PN)
+
+# Reorganizar el orden de las columnas para mostrar Frel_2019 primero, luego Frel_2024 y Diferencia_PN
+tabla_PN <- tabla_PN %>%
+  select(HOJA, Frel_2019, Frel_2024, Diferencia_PN)
+
+# Redondear los valores
+tabla_PN <- tabla_PN %>%
+  mutate(across(c(Frel_2019, Frel_2024, Diferencia_PN), ~ round(.x, 2)))
+
+# Mostrar la tabla final para Partido Nacional
+library(knitr)
+library(kableExtra)
+
+kable(tabla_PN, caption = "Tabla 10. Diferencia de puntos porcentuales - Hojas Partido Nacional (2019 vs 2024)") %>%
+  kable_styling() %>%
+  footnote(general = "", general_title = "Fuente: Corte Electoral, 2019, 2024")
+
+
+```
+
+Seguimos con el PC.
+
+```{r}
+# Filtrar y calcular frecuencias relativas para 2019 (solo Partido Colorado)
+votos_2019_PC <- depto_circ_2019 %>%
+  filter(serie == "TDC", LEMA == "Partido Colorado") %>%
+  group_by(HOJA) %>%
+  summarise(Fabs_2019 = sum(CNT_VOTOS, na.rm = TRUE)) %>%
+  ungroup()
+
+# Filtrar y calcular frecuencias relativas para 2024 (solo Partido Colorado)
+votos_2024_PC <- depto_circ_2024 %>%
+  filter(serie == "TDC", LEMA == "Partido Colorado") %>%
+  group_by(HOJA) %>%
+  summarise(Fabs_2024 = sum(CNT_VOTOS, na.rm = TRUE)) %>%
+  ungroup()
+
+# Calcular el total de votos por año para Partido Colorado
+Fabs_total_2019_PC <- votos_2019_PC %>% 
+  summarise(Fabs_total_2019_PC = sum(Fabs_2019, na.rm = TRUE))
+
+Fabs_total_2024_PC <- votos_2024_PC %>% 
+  summarise(Fabs_total_2024_PC = sum(Fabs_2024, na.rm = TRUE))
+
+# Calcular la frecuencia relativa por hoja
+votos_2019_PC <- votos_2019_PC %>%
+  left_join(Fabs_total_2019_PC, by = character()) %>%
+  mutate(Frel_2019 = (Fabs_2019 / Fabs_total_2019_PC) * 100)
+
+votos_2024_PC <- votos_2024_PC %>%
+  left_join(Fabs_total_2024_PC, by = character()) %>%
+  mutate(Frel_2024 = (Fabs_2024 / Fabs_total_2024_PC) * 100)
+
+# Unir los datos de 2019 y 2024, asegurando que se mantengan todas las hojas de 2024
+tabla_completa_PC <- votos_2024_PC %>%
+  select(HOJA, Frel_2024) %>%
+  left_join(votos_2019_PC %>% select(HOJA, Frel_2019), by = "HOJA")
+
+# Calcular la diferencia en puntos porcentuales
+tabla_completa_PC <- tabla_completa_PC %>%
+  mutate(Diferencia_PC = Frel_2024 - Frel_2019)
+
+# Agregar la fila de totales con base 100
+totales_PC <- tabla_completa_PC %>%
+  summarise(
+    HOJA = "Totales",
+    Frel_2019 = 100,
+    Frel_2024 = 100,
+    Diferencia_PC = NA
+  )
+
+# Convertir la columna 'HOJA' a character para ambas tablas antes de unir
+tabla_completa_PC <- tabla_completa_PC %>%
+  mutate(HOJA = as.character(HOJA))
+
+totales_PC <- totales_PC %>%
+  mutate(HOJA = as.character(HOJA))
+
+# Unir las tablas
+tabla_PC <- bind_rows(tabla_completa_PC, totales_PC)
+
+# Reorganizar el orden de las columnas para mostrar Frel_2019 primero, luego Frel_2024 y Diferencia_PC
+tabla_PC <- tabla_PC %>%
+  select(HOJA, Frel_2019, Frel_2024, Diferencia_PC)
+
+# Redondear los valores
+tabla_PC <- tabla_PC %>%
+  mutate(across(c(Frel_2019, Frel_2024, Diferencia_PC), ~ round(.x, 2)))
+
+# Mostrar la tabla final para Partido Colorado
+library(knitr)
+library(kableExtra)
+
+kable(tabla_PC, caption = "Tabla 11. Diferencia de puntos porcentuales - Hojas Partido Colorado (2019 vs 2024)") %>%
+  kable_styling() %>%
+  footnote(general = "", general_title = "Fuente: Corte Electoral, 2019, 2024")
+
+
+
+
+```
+
+Y finalizamos con el FA para comparar cómo votaron las hojas del lema en 219 y 2024 en términos relativos.
+
+```{r}
+# Filtrar y calcular frecuencias relativas para 2019 (solo Partido Frente Amplio)
+votos_2019_FA <- depto_circ_2019 %>%
+  filter(serie == "TDC", LEMA == "Partido Frente Amplio") %>%
+  group_by(HOJA) %>%
+  summarise(Fabs_2019 = sum(CNT_VOTOS, na.rm = TRUE)) %>%
+  ungroup()
+
+# Filtrar y calcular frecuencias relativas para 2024 (solo Partido Frente Amplio)
+votos_2024_FA <- depto_circ_2024 %>%
+  filter(serie == "TDC", LEMA == "Partido Frente Amplio") %>%
+  group_by(HOJA) %>%
+  summarise(Fabs_2024 = sum(CNT_VOTOS, na.rm = TRUE)) %>%
+  ungroup()
+
+# Calcular el total de votos por año para Partido Frente Amplio
+Fabs_total_2019_FA <- votos_2019_FA %>% 
+  summarise(Fabs_total_2019_FA = sum(Fabs_2019, na.rm = TRUE))
+
+Fabs_total_2024_FA <- votos_2024_FA %>% 
+  summarise(Fabs_total_2024_FA = sum(Fabs_2024, na.rm = TRUE))
+
+# Calcular la frecuencia relativa por hoja
+votos_2019_FA <- votos_2019_FA %>%
+  left_join(Fabs_total_2019_FA, by = character()) %>%
+  mutate(Frel_2019 = (Fabs_2019 / Fabs_total_2019_FA) * 100)
+
+votos_2024_FA <- votos_2024_FA %>%
+  left_join(Fabs_total_2024_FA, by = character()) %>%
+  mutate(Frel_2024 = (Fabs_2024 / Fabs_total_2024_FA) * 100)
+
+# Unir los datos de 2019 y 2024, asegurando que se mantengan todas las hojas de 2024
+tabla_completa_FA <- votos_2024_FA %>%
+  select(HOJA, Frel_2024) %>%
+  left_join(votos_2019_FA %>% select(HOJA, Frel_2019), by = "HOJA")
+
+# Calcular la diferencia en puntos porcentuales
+tabla_completa_FA <- tabla_completa_FA %>%
+  mutate(Diferencia_FA = Frel_2024 - Frel_2019)
+
+# Agregar la fila de totales con base 100
+totales_FA <- tabla_completa_FA %>%
+  summarise(
+    HOJA = "Totales",
+    Frel_2019 = 100,
+    Frel_2024 = 100,
+    Diferencia_FA = NA
+  )
+
+# Convertir la columna 'HOJA' a character para ambas tablas antes de unir
+tabla_completa_FA <- tabla_completa_FA %>%
+  mutate(HOJA = as.character(HOJA))
+
+totales_FA <- totales_FA %>%
+  mutate(HOJA = as.character(HOJA))
+
+# Unir las tablas
+tabla_FA <- bind_rows(tabla_completa_FA, totales_FA)
+
+# Reorganizar el orden de las columnas para mostrar Frel_2019 primero, luego Frel_2024 y Diferencia_FA
+tabla_FA <- tabla_FA %>%
+  select(HOJA, Frel_2019, Frel_2024, Diferencia_FA)
+
+# Redondear los valores
+tabla_FA <- tabla_FA %>%
+  mutate(across(c(Frel_2019, Frel_2024, Diferencia_FA), ~ round(.x, 2)))
+
+# Ordenar la tabla de forma decreciente por Frel_2024
+tabla_FA <- tabla_FA %>%
+  arrange(desc(Frel_2024))
+
+# Mostrar la tabla final para Partido Frente Amplio ordenada
+library(knitr)
+library(kableExtra)
+
+kable(tabla_FA, caption = "Tabla 12. Diferencia de puntos porcentuales - Hojas Partido Frente Amplio (2019 vs 2024)") %>%
+  kable_styling(font_size = 14) %>%  # Ajusta el tamaño de la letra (puedes cambiar el valor)
+  footnote(general = "", general_title = "Fuente: Corte Electoral, 2019, 2024")
+```
